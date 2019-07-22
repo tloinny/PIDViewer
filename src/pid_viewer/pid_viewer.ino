@@ -4,7 +4,7 @@
 #include "A4988.h"
 
 AMS_5600 ams_5600;
-PID_CONTROLLER PID_contorller(1, 0, 0, 0.0001, 10.0);
+PID_CONTROLLER PID_contorller(2, 0.7, 5, 0.00000001, 0.7);
 float feedback = 0;
 float output = 0;
 int throttle = 0;
@@ -13,7 +13,7 @@ int get_p = 0;
 bool arrive = 0;
 
 #define MOTOR_STEPS 200
-#define Micro_step 1
+#define Micro_step 16
 #define DIR 4
 #define STEP 3
 #define MS1 0
@@ -62,46 +62,30 @@ float convertScaledAngleToDegrees(word newAngle)
 
 void setup()
 {
+  pinMode(7,OUTPUT);
+  pinMode(8,OUTPUT);
+  digitalWrite(7,HIGH);
+  digitalWrite(8,HIGH);
 	Wire.begin();
 	Serial.begin(115200);
 	ams_5600.setStartPosition(word(0/0.087));
 	ams_5600.setEndPosition(word(355/0.087));
 	PID_contorller.setGoal(set_point);
-  stepper.begin(1, 1);
-	Serial.println("ready");
+  stepper.begin(1, Micro_step);
 }
 
 void loop()
 {
-  Serial.print("angle: ");
-  Serial.print(convertScaledAngleToDegrees(ams_5600.getScaledAngle()), DEC);
-  Serial.print("  ");
 	feedback = convertScaledAngleToDegrees(ams_5600.getScaledAngle());
-  if(!(abs(feedback-set_point)<=0.9*(360/MOTOR_STEPS/Micro_step)))
-  {
-    output = PID_contorller.update(feedback);  /* Stepper motor should run faster if this value become lager */
-    arrive = 0;
-  }else
-  {
-    stepper.stop();
-    arrive = 1;
-  }
-  Serial.print("output: ");
-  Serial.print(output, DEC);
-  Serial.print("  ");
-	Serial.print("rpm: ");
-	Serial.print(stepper.getRPM(), DEC);
-	Serial.println("  ");
-    if(output > 0 && arrive == 0)
-    {
-      //stepper.setRPM(map(output, 0, 180, 0, 100));
-      stepper.setRPM(output);
-      stepper.move(1);
-    }else if(output < 0 && arrive == 0)
-    {
+  output = PID_contorller.update(feedback);
+  if(output < 0 )
+   {
       output *= -1;
-      //stepper.setRPM(map(output, 0, 180, 0, 100));
       stepper.setRPM(output);
-      stepper.move(-1);
-    }
+      stepper.move(output);
+   }else if(output > 0)
+   {
+     stepper.setRPM(output);
+     stepper.move(-output);
+   }
 }
