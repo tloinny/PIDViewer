@@ -1,14 +1,27 @@
-#include <FlexiTimer2.h>
 #include <easy_pid.h>
 #include "AS5600.h"
 #include <Wire.h>
+#include "A4988.h"
 
 AMS_5600 ams_5600;
-PID_CONTROLLER PID_contorller(1000000, 0, 0, 0.001, 10.0);
+PID_CONTROLLER PID_contorller(1, 0, 0, 0.0001, 10.0);
 float feedback = 0;
 float output = 0;
 int throttle = 0;
 int get_p = 0;
+
+bool arrive = 0;
+
+#define MOTOR_STEPS 200
+#define Micro_step 1
+#define DIR 4
+#define STEP 3
+#define MS1 0
+#define MS2 0
+#define MS3 0
+A4988 stepper(MOTOR_STEPS, DIR, STEP, MS1, MS2, MS3);
+
+int set_point = 270;
 
 /**
  *@Function: convertScaledAngleToDegrees
@@ -47,26 +60,15 @@ float convertScaledAngleToDegrees(word newAngle)
   return (newAngle * multipler);
 }
 
-void Event()
-{
-  digitalWrite(3,HIGH);
-  delayMicroseconds(throttle);	/* The stepper motor will be faster if this value become smaller */
-  digitalWrite(3,LOW);
-}
-
 void setup()
 {
-	FlexiTimer2::set(3, 1.0/10000, Event);
-	pinMode(3, OUTPUT);
-	pinMode(4, OUTPUT);
-	FlexiTimer2::start();
 	Wire.begin();
 	Serial.begin(115200);
 	ams_5600.setStartPosition(word(0/0.087));
 	ams_5600.setEndPosition(word(355/0.087));
-	PID_contorller.setGoal(180);
+	PID_contorller.setGoal(set_point);
+  stepper.begin(1, 1);
 	Serial.println("ready");
-  throttle=1000;
 }
 
 void loop()
@@ -75,25 +77,31 @@ void loop()
   Serial.print(convertScaledAngleToDegrees(ams_5600.getScaledAngle()), DEC);
   Serial.print("  ");
 	feedback = convertScaledAngleToDegrees(ams_5600.getScaledAngle());
-	output = PID_contorller.update(feedback);	/* Stepper motor should run faster if this value become lager */
-	Serial.print("output: ");
-	Serial.print(output, DEC);
+  if(!(abs(feedback-set_point)<=0.9*(360/MOTOR_STEPS/Micro_step)))
+  {
+    output = PID_contorller.update(feedback);  /* Stepper motor should run faster if this value become lager */
+    arrive = 0;
+  }else
+  {
+    stepper.stop();
+    arrive = 1;
+  }
+  Serial.print("output: ");
+  Serial.print(output, DEC);
+  Serial.print("  ");
+	Serial.print("rpm: ");
+	Serial.print(stepper.getRPM(), DEC);
 	Serial.println("  ");
-    if(output > 0.1)
+    if(output > 0 && arrive == 0)
     {
-      FlexiTimer2::start();
-		  digitalWrite(4, HIGH);
-		  //throttle = map(output*100, 0, 100, 0, 9999);
-		  throttle -= output;
-    }else if(output < -0.1)
+      //stepper.setRPM(map(output, 0, 180, 0, 100));
+      stepper.setRPM(output);
+      stepper.move(1);
+    }else if(output < 0 && arrive == 0)
     {
-      FlexiTimer2::start();
-		  digitalWrite(4, LOW);
-		  //throttle = map(output*100, -100, 0, -3, 9999);
-		  throttle -= output;
-    }
-    else
-    {
-		  FlexiTimer2::stop();
+      output *= -1;
+      //stepper.setRPM(map(output, 0, 180, 0, 100));
+      stepper.setRPM(output);
+      stepper.move(-1);
     }
 }
